@@ -4,6 +4,18 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="description" content="NAPOD — NASA Astronomy Picture of the Day viewer. Browse the cosmos by date with field notes." />
+{% if apod %}
+<meta property="og:title" content="{{ apod.title | e }} — NAPOD" />
+<meta property="og:description" content="{{ apod.explanation[:200] | e }}…" />
+<meta property="og:image" content="{{ apod.url | e }}" />
+<meta property="og:url" content="{{ request.url }}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="NAPOD" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{{ apod.title | e }} — NAPOD" />
+<meta name="twitter:description" content="{{ apod.explanation[:200] | e }}…" />
+<meta name="twitter:image" content="{{ apod.url | e }}" />
+{% endif %}
 <title>NAPOD · NASA APOD viewer</title>
 <link rel="icon" href="logo.png" sizes="any" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -77,6 +89,16 @@
     color: var(--text-faint); letter-spacing: 0.16em;
     text-transform: uppercase; margin-top: 6px;
   }
+  .brand .tagline {
+    font-family: var(--body);
+    font-size: 1rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-top: 14px;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 
   .rate-status {
     display: flex; align-items: center; justify-content: center; gap: 16px;
@@ -95,7 +117,6 @@
   .rate-status .dot.warn { background: var(--amber); }
   .rate-status .dot.low { background: #ff6060; }
   .rate-status .stat { display: inline-flex; align-items: center; gap: 2px; }
-  .rate-status .stat.cache-hit { color: var(--cyan); opacity: 0.7; }
 
   .loading {
     display: flex; flex-direction: column; align-items: center; gap: 18px;
@@ -227,25 +248,6 @@
     object-fit: cover;
   }
   .card-image iframe { border: none; }
-  .card-image .badge {
-    position: absolute;
-    top: 14px; left: 14px;
-    background: rgba(0,0,0,0.55);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255,255,255,0.1);
-    padding: 4px 11px;
-    border-radius: 3px;
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    font-weight: 500;
-    color: var(--amber);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    z-index: 2;
-  }
-  .card-image .badge.video { color: var(--cyan); }
-
   .img-skeleton {
     position: absolute; inset: 0;
     background: linear-gradient(110deg, #0a0a0d 30%, #15151e 50%, #0a0a0d 70%);
@@ -392,6 +394,10 @@
   .btn.primary:hover { filter: brightness(1.08); }
 
   .card.hidden { display: none; }
+  .card-description.hidden { display: none; }
+  .card-description {
+    margin-top: 10px;
+  }
 
   .entry-meta {
     display: flex;
@@ -438,19 +444,44 @@
   .log-text .tag {
     font-family: var(--mono);
     font-size: 0.65rem;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--text-faint);
+    color: var(--amber);
     display: block;
     margin-bottom: 10px;
+    opacity: 0.9;
   }
   .log-text p {
-    color: var(--text-dim);
-    font-size: 1.02rem;
-    line-height: 1.85;
+    color: var(--text);
+    font-size: 1.05rem;
+    line-height: 1.9;
     font-weight: 400;
     text-align: justify;
     text-justify: inter-word;
+    opacity: 0.92;
+  }
+
+  .site-footer {
+    text-align: center;
+    padding: 40px 24px 60px;
+    position: relative;
+    z-index: 1;
+  }
+  .site-footer .footer-count {
+    font-family: var(--display);
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--amber);
+    letter-spacing: 0.04em;
+  }
+  .site-footer .footer-count .label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    display: block;
+    margin-top: 4px;
   }
 
   @media (max-width: 600px) {
@@ -488,12 +519,8 @@
       <h1>NAPOD</h1>
     </div>
     <div class="maker">by Kairva Corp</div>
-    <div class="rate-status" id="rateStatus">
-      <span class="stat" id="rateNasa">NASA {% if nasa_limit %}{{ nasa_remaining }}/{{ nasa_limit }}{% else %}—{% endif %}</span>
-      <span class="stat" id="rateLocal">Proxy {{ rate_remaining }}/{{ rate_limit }}</span>
-      <span class="stat cache-hit{% if not cache_hit %} hidden{% endif %}" id="cacheInfo">&#9632; cached</span>
-      {% if visitor_count is not none %}<span class="stat" id="visitorCount">&#9733; {{ visitor_count }} visitors</span>{% endif %}
-    </div>
+    <p class="tagline">Browse the universe with NASA's Astronomy Picture of the Day</p>
+    <div class="rate-status" id="rateStatus"></div>
   </div>
 
   <div id="loading" class="loading{% if apod %} hidden{% endif %}" aria-live="polite" aria-label="Loading astronomy picture">
@@ -506,7 +533,7 @@
   </div>
 
   <div class="carousel-section">
-    <div class="date-readout" id="dateReadout">{% if apod %}<span class="yr">{{ apod.date[:4] }}</span> · {{ apod.date[5:7]|month_name }} · {{ apod.date[8:] }}{% else %}—{% endif %}</div>
+    <div class="date-readout" id="dateReadout">{% if apod %}{{ apod.date[8:] }} {{ apod.date[5:7]|month_name }} {{ apod.date[:4] }}{% else %}—{% endif %}</div>
 
     <div class="carousel-track" id="carouselTrack" tabindex="0" role="tablist" aria-label="Date navigator">
     </div>
@@ -519,12 +546,20 @@
     </div>
   </div>
 
+  <div id="card" class="card{% if not apod %} hidden{% endif %}">
+    <div class="card-body">
+      <div class="entry-meta">
+        <span class="copyright" id="displayCopyright">{% if apod %}{% if apod.copyright %}&copy; {{ apod.copyright }}{% else %}Public domain &middot; NASA{% endif %}{% endif %}</span>
+      </div>
+      <h2 id="displayTitle">{% if apod %}{{ apod.title }}{% endif %}</h2>
+    </div>
+  </div>
+
   <div id="viewportRow" class="viewport-row{% if not apod %} hidden{% endif %}">
     <button class="side-arrow" id="prevDayBtn" title="Previous day" aria-label="Previous day">&#8249;</button>
     <div class="viewport" id="viewport" tabindex="0" aria-label="Image viewer, swipe left or right">
       <div class="card-image" id="imageContainer">
 {% if apod %}
-        <div class="badge{% if apod.media_type == 'video' %} video{% endif %}">{% if apod.media_type == 'video' %}Video feed{% else %}Optical image{% endif %}</div>
   {% if apod.media_type == 'video' %}
         <iframe src="{{ apod.url|replace('http://', 'https://') }}" allow="autoplay; encrypted-media" allowfullscreen aria-label="Embedded video player"></iframe>
   {% else %}
@@ -545,20 +580,18 @@
     <button class="btn-icon" id="copyLinkBtn" title="Copy link to this day">&#10752; Copy link</button>
   </div>
 
-  <div id="card" class="card{% if not apod %} hidden{% endif %}">
-    <div class="card-body">
-      <div class="entry-meta">
-        <span class="copyright" id="displayCopyright">{% if apod %}{% if apod.copyright %}&copy; {{ apod.copyright }}{% else %}Public domain &middot; NASA{% endif %}{% endif %}</span>
-      </div>
-      <h2 id="displayTitle">{% if apod %}{{ apod.title }}{% endif %}</h2>
-      <div class="log-text">
-        <span class="tag">Field notes</span>
-        <p id="displayExplanation">{% if apod %}{{ apod.explanation }}{% endif %}</p>
-      </div>
+  <div class="card-description" id="cardDescription">
+    <div class="log-text">
+      <span class="tag">Description</span>
+      <p id="displayExplanation">{% if apod %}{{ apod.explanation }}{% endif %}</p>
     </div>
   </div>
 
 </div>
+
+<footer class="site-footer">
+  <div class="footer-count" id="footerVisitorCount">{% if visitor_count is not none %}&#9733; {{ visitor_count }} visitors{% endif %}</div>
+</footer>
 
 <div class="toast-container" aria-live="polite">
   <div class="toast" id="toast"></div>
@@ -577,6 +610,7 @@
   const $ = id => document.getElementById(id);
   const datePicker = $('datePicker');
   const card = $('card');
+  const cardDescription = $('cardDescription');
   const viewportRow = $('viewportRow');
   const imageActions = $('imageActions');
   const loading = $('loading');
@@ -596,9 +630,6 @@
   const toast = $('toast');
   const viewport = $('viewport');
   const rateStatus = $('rateStatus');
-  const rateNasa = $('rateNasa');
-  const rateLocal = $('rateLocal');
-  const cacheInfo = $('cacheInfo');
   const errType = $('errType');
   const errMsg = $('errMsg');
   const retryBtn = $('retryBtn');
@@ -628,7 +659,7 @@
 
   function readoutFmt(dateStr) {
     const [y, m, d] = dateStr.split('-');
-    return '<span class="yr">' + y + '</span> \u00B7 ' + MONTHS[parseInt(m,10)-1] + ' \u00B7 ' + d;
+    return d + ' ' + MONTHS[parseInt(m,10)-1] + ' ' + y;
   }
 
   function apodPageUrl(dateStr) {
@@ -692,6 +723,7 @@
     if (abortController) abortController.abort();
     loading.classList.remove('hidden');
     card.classList.add('hidden');
+    cardDescription.classList.add('hidden');
     viewportRow.classList.add('hidden');
     imageActions.classList.add('hidden');
     errorEl.classList.add('hidden');
@@ -705,6 +737,7 @@
     errMsg.textContent = msg;
     errorEl.classList.remove('hidden');
     card.classList.add('hidden');
+    cardDescription.classList.add('hidden');
     viewportRow.classList.add('hidden');
     imageActions.classList.add('hidden');
     hideLoading();
@@ -732,37 +765,11 @@
     if (skel) skel.remove();
   }
 
-  // ---------- Rate display ----------
-  function updateRateDisplay(headers) {
-    if (!headers) return;
-    var nasaRemain = headers.get('X-RateLimit-Remaining');
-    var nasaLimit = headers.get('X-RateLimit-Limit');
-    var localRemain = headers.get('X-RateLimit-Local-Remaining');
-    var localLimit = headers.get('X-RateLimit-Local-Limit');
-    if (nasaRemain !== null && nasaLimit !== null) {
-      var pct = parseInt(nasaRemain) / parseInt(nasaLimit);
-      var dc = pct > 0.2 ? 'ok' : (pct > 0.05 ? 'warn' : 'low');
-      rateNasa.innerHTML = '<span class="dot ' + dc + '"></span>NASA ' + nasaRemain + '/' + nasaLimit;
-    }
-    if (localRemain !== null && localLimit !== null) {
-      var pct2 = parseInt(localRemain) / parseInt(localLimit);
-      var dc2 = pct2 > 0.2 ? 'ok' : (pct2 > 0.05 ? 'warn' : 'low');
-      rateLocal.innerHTML = '<span class="dot ' + dc2 + '"></span>Proxy ' + localRemain + '/' + localLimit;
-    }
-    var cache = headers.get('X-Cache');
-    if (cache === 'HIT') cacheInfo.classList.remove('hidden');
-    else cacheInfo.classList.add('hidden');
-  }
-
   // ---------- Render image ----------
   function renderImage(data) {
     hideSkeleton();
     currentData = data;
-    var badge = document.createElement('div');
-    badge.className = 'badge' + (data.media_type === 'video' ? ' video' : '');
-    badge.textContent = data.media_type === 'video' ? 'Video feed' : 'Optical image';
     imageContainer.innerHTML = '';
-    imageContainer.appendChild(badge);
     if (data.media_type === 'video') {
       var iframe = document.createElement('iframe');
       iframe.src = data.url.replace('http://', 'https://');
@@ -923,7 +930,6 @@
 
       var res = await fetch(url, { signal: signal });
       clearTimeout(timeout);
-      updateRateDisplay(res.headers);
 
       if (res.status === 429) {
         var b = await res.json().catch(function(){ return {}; });
@@ -970,6 +976,7 @@
     hideLoading();
     viewportRow.classList.remove('hidden');
     card.classList.remove('hidden');
+    cardDescription.classList.remove('hidden');
     selectedDate = data.date;
     carouselCenter = data.date;
     dateReadout.innerHTML = readoutFmt(data.date);
