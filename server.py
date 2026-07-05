@@ -205,17 +205,19 @@ def _fetch_apod(params, ip):
         urllib.parse.urlencode(sorted(params.items())).encode()
     ).hexdigest()
 
-    date_param = params.get('date')
-    if date_param:
-        cached = _cache_get('date:' + date_param)
+    # Don't cache-bypass for random (count) requests — always fetch fresh
+    if 'count' not in params:
+        date_param = params.get('date')
+        if date_param:
+            cached = _cache_get('date:' + date_param)
+            if cached is not None:
+                body_str, nasa_headers = cached
+                return (200, json.loads(body_str), nasa_headers, True)
+
+        cached = _cache_get(cache_key)
         if cached is not None:
             body_str, nasa_headers = cached
             return (200, json.loads(body_str), nasa_headers, True)
-
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        body_str, nasa_headers = cached
-        return (200, json.loads(body_str), nasa_headers, True)
 
     if not NASA_API_KEY:
         return (500, {'error': 'NASA_API_KEY not set in .env'}, {}, False)
@@ -237,7 +239,8 @@ def _fetch_apod(params, ip):
                     nasa_headers[h] = v
 
             if status == 200:
-                _cache_put(cache_key, body_str, nasa_headers)
+                if 'count' not in params:
+                    _cache_put(cache_key, body_str, nasa_headers)
                 try:
                     data = json.loads(body_str)
                     entries = data if isinstance(data, list) else [data]
