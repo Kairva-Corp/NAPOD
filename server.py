@@ -436,7 +436,52 @@ def add_cors_headers(resp):
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return resp
 
-@app.route('/api/apod', methods=['POST', 'OPTIONS'])
+def _parse_apod_params():
+    """Parse params from either POST body or GET query string."""
+    if request.method == 'POST':
+        body = request.get_json(silent=True)
+        params, err = _validate_api_params(body)
+        if err:
+            return (None, err)
+        return (params, None)
+
+    # GET — parse query params (backward compat)
+    raw = {}
+    for key in ALLOWED_PARAMS:
+        val = request.args.get(key)
+        if val is not None:
+            raw[key] = val
+    raw['thumbs'] = 'true'
+    # Validate date if present
+    if 'date' in raw:
+        validated, err_msg = _validate_date(raw['date'])
+        if err_msg:
+            return (None, (400, {'error': err_msg}))
+        raw['date'] = validated
+    if 'count' in raw and 'date' in raw:
+        return (None, (400, {'error': 'Cannot request both "count" (random) and "date".'}))
+    return (raw, None)
+
+def _make_apod_response(ip, status, data, nasa_headers, cache_hit):
+    """Build a rate-limited API response with all headers."""
+    rinfo = _rate_info(ip)
+    rate_headers = _build_rate_headers(rinfo)
+    body_str = json.dumps(data)
+    resp = Response(body_str, status=status, mimetype='application/json')
+    for k, v in rate_headers.items():
+        resp.headers[k] = v
+    resp.headers['X-Cache'] = 'HIT' if cache_hit else 'MISS'
+    if cache_hit:
+        resp.headers['X-Cache-TTL'] = str(CACHE_TTL)
+    if nasa_headers.get('X-RateLimit-Limit'):
+        resp.headers['X-RateLimit-NASA-Limit'] = nasa_headers['X-RateLimit-Limit']
+    if nasa_headers.get('X-RateLimit-Remaining'):
+        resp.headers['X-RateLimit-NASA-Remaining'] = nasa_headers['X-RateLimit-Remaining']
+    if nasa_headers.get('X-RateLimit-Reset'):
+        resp.headers['X-RateLimit-NASA-Reset'] = nasa_headers['X-RateLimit-Reset']
+    return resp
+
+@app.route('/api/apod', methods=['GET', 'POST', 'OPTIONS'])
 def proxy_apod():
     ip = request.remote_addr or 'unknown'
 
@@ -444,20 +489,14 @@ def proxy_apod():
     if request.method == 'OPTIONS':
         return Response(status=204)
 
-    # --- Parse and validate body ---
-    body = request.get_json(silent=True)
-    params, err = _validate_api_params(body)
+    # --- Parse params ---
+    params, err = _parse_apod_params()
     if err:
         status_code, err_body = err
-        return Response(
-            json.dumps(err_body),
-            status=status_code, mimetype='application/json',
-        )
+        return Response(json.dumps(err_body), status=status_code, mimetype='application/json')
 
     # --- Rate limit ---
     blocked, retry_after, nasa_exhausted = _rate_limited(ip)
-    rinfo = _rate_info(ip)
-    rate_headers = _build_rate_headers(rinfo)
 
     if blocked:
         msg = 'Too many requests. '
@@ -469,35 +508,15 @@ def proxy_apod():
             json.dumps({'error': msg, 'retry_after_seconds': int(retry_after)}),
             status=429, mimetype='application/json',
         )
-        for k, v in rate_headers.items():
+        rinfo = _rate_info(ip)
+        for k, v in _build_rate_headers(rinfo).items():
             resp.headers[k] = v
         resp.headers['Retry-After'] = str(max(1, int(retry_after)))
         return resp
 
     # --- Fetch ---
     status, data, nasa_headers, cache_hit = _fetch_apod(params, ip)
-
-    body_str = json.dumps(data)
-    resp = Response(body_str, status=status, mimetype='application/json')
-
-    # Rate headers
-    for k, v in rate_headers.items():
-        resp.headers[k] = v
-
-    # Cache headers
-    resp.headers['X-Cache'] = 'HIT' if cache_hit else 'MISS'
-    if cache_hit:
-        resp.headers['X-Cache-TTL'] = str(CACHE_TTL)
-
-    # NASA rate headers passthrough
-    if nasa_headers.get('X-RateLimit-Limit'):
-        resp.headers['X-RateLimit-NASA-Limit'] = nasa_headers['X-RateLimit-Limit']
-    if nasa_headers.get('X-RateLimit-Remaining'):
-        resp.headers['X-RateLimit-NASA-Remaining'] = nasa_headers['X-RateLimit-Remaining']
-    if nasa_headers.get('X-RateLimit-Reset'):
-        resp.headers['X-RateLimit-NASA-Reset'] = nasa_headers['X-RateLimit-Reset']
-
-    return resp
+    return _make_apod_response(ip, status, data, nasa_headers, cache_hit)
 
 
 @app.route('/api/status', methods=['GET'])

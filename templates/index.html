@@ -910,6 +910,7 @@
   // ---------- Retry backoff ----------
   var retryCount = 0;
   var MAX_RETRIES = 3;
+  var usePost = true;
   function resetRetries() { retryCount = 0; }
 
   // ---------- Fetch ----------
@@ -937,15 +938,22 @@
     var timeout = setTimeout(function() { abortController.abort(); }, TIMEOUT_MS);
 
     try {
-      var bodyData = { thumbs: true };
-      if (date) bodyData.date = date;
-
-      var res = await fetch(BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData),
-        signal: signal,
-      });
+      var res;
+      if (usePost) {
+        var bodyData = { thumbs: true };
+        if (date) bodyData.date = date;
+        res = await fetch(BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyData),
+          signal: signal,
+        });
+        if (res.status === 405) { usePost = false; clearTimeout(timeout); fetchAPOD(date, opts); return; }
+      } else {
+        var url = BASE + '?thumbs=true';
+        if (date) url += '&date=' + date;
+        res = await fetch(url, { signal: signal });
+      }
       clearTimeout(timeout);
 
       if (res.status === 429) {
