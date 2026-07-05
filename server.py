@@ -1,14 +1,3 @@
-"""
-Flask server — serves NAPOD frontend, proxies NASA APOD API,
-adds Supabase-backed caching, visitor counting, and per-IP rate limiting.
-
-Usage:
-  pip install flask python-dotenv
-  echo "NASA_API_KEY=your_key" > .env
-  # Optional: add SUPABASE_URL + SUPABASE_ANON_KEY for visitor tracking
-  python server.py
-"""
-
 import os
 import json
 import time
