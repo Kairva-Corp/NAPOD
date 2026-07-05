@@ -429,24 +429,20 @@ def index():
     )
 
 
-@app.route('/api/apod', methods=['POST'])
+@app.after_request
+def add_cors_headers(resp):
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return resp
+
+@app.route('/api/apod', methods=['POST', 'OPTIONS'])
 def proxy_apod():
     ip = request.remote_addr or 'unknown'
 
-    # --- Validate origin ---
-    origin = request.headers.get('Origin', '')
-    referer = request.headers.get('Referer', '')
-    host = request.host
-    if origin and host not in origin:
-        return Response(
-            json.dumps({'error': 'Request origin not allowed.'}),
-            status=403, mimetype='application/json',
-        )
-    if referer and host not in referer:
-        return Response(
-            json.dumps({'error': 'Request referer not allowed.'}),
-            status=403, mimetype='application/json',
-        )
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return Response(status=204)
 
     # --- Parse and validate body ---
     body = request.get_json(silent=True)
