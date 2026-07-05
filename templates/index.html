@@ -705,10 +705,17 @@
 
   // ---------- Error mapping ----------
   function friendlyError(status, body) {
-    if (status === 429) return 'Rate limit hit. NASA allows 1,000 requests/hour \u2014 try again in a moment.';
+    if (status === 429) {
+      var msg = body && body.error ? body.error : 'Rate limit exceeded.';
+      if (body && body.retry_after_seconds) {
+        msg += ' Retry in ' + body.retry_after_seconds + 's.';
+      }
+      return msg;
+    }
     if (status === 400 || status === 404) {
       if (body && body.msg && body.msg.indexOf('date') !== -1) return 'No APOD entry for that date. Try another day.';
       if (body && body.msg && body.msg.indexOf('parameters') !== -1) return 'Missing or invalid parameters.';
+      if (body && body.error) return body.error;
       return 'No data for that date. Try another day.';
     }
     if (body && body.msg) return body.msg;
@@ -899,6 +906,11 @@
     fetchAPOD(addDays(selectedDate, 1));
   });
 
+  // ---------- Retry backoff ----------
+  var retryCount = 0;
+  var MAX_RETRIES = 3;
+  function resetRetries() { retryCount = 0; }
+
   // ---------- Fetch ----------
   async function fetchAPOD(date, opts) {
     opts = opts || {};
@@ -911,7 +923,7 @@
     // Check localStorage cache first
     if (date && !opts.random) {
       var cached = getCache(date);
-      if (cached) { abortController.abort(); applyData(cached); return; }
+      if (cached) { abortController.abort(); applyData(cached); resetRetries(); return; }
     }
 
     if (navigator.onLine === false) {
@@ -924,18 +936,30 @@
     var timeout = setTimeout(function() { abortController.abort(); }, TIMEOUT_MS);
 
     try {
-      var url = BASE + '?thumbs=true';
-      if (opts.random) url += '&count=1';
-      else if (date) url += '&date=' + date;
+      var bodyData = { thumbs: true };
+      if (opts.random) bodyData.count = 1;
+      else if (date) bodyData.date = date;
 
-      var res = await fetch(url, { signal: signal });
+      var res = await fetch(BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData),
+        signal: signal,
+      });
       clearTimeout(timeout);
 
       if (res.status === 429) {
         var b = await res.json().catch(function(){ return {}; });
         var s = date ? getStaleCache(date) : null;
         if (s) { applyData(s); showError('Rate limit hit \u2014 showing cached data.', 'cache'); return; }
-        showError(friendlyError(429, b), 'api', fetchOpts);
+        var retryAfter = (b && b.retry_after_seconds) ? b.retry_after_seconds : 5;
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          showError('Rate limited. Retrying in ' + retryAfter + 's... (attempt ' + retryCount + '/' + MAX_RETRIES + ')', 'api');
+          setTimeout(function() { fetchAPOD(date, opts); }, retryAfter * 1000);
+        } else {
+          showError(friendlyError(429, b), 'api', fetchOpts);
+        }
         return;
       }
       if (res.status >= 500) {
@@ -958,17 +982,32 @@
 
       setCache(data.date, data);
       applyData(data);
+      resetRetries();
     } catch (err) {
       clearTimeout(timeout);
       if (err.name === 'AbortError' || err.code === 20) {
         var s3 = date ? getStaleCache(date) : null;
         if (s3) { applyData(s3); showError('Request timed out \u2014 showing cached data.', 'cache'); return; }
-        showError('Request timed out. Check your connection and try again.', 'network', fetchOpts);
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          var delay = Math.pow(2, retryCount) * 1000;
+          showError('Request timed out. Retrying in ' + (delay/1000) + 's... (attempt ' + retryCount + '/' + MAX_RETRIES + ')', 'network');
+          setTimeout(function() { fetchAPOD(date, opts); }, delay);
+        } else {
+          showError('Request timed out. Check your connection and try again.', 'network', fetchOpts);
+        }
         return;
       }
       var s4 = date ? getStaleCache(date) : null;
       if (s4) { applyData(s4); showError('Network error \u2014 showing cached data.', 'cache'); return; }
-      showError(err.message || 'Request failed. Check your connection.', 'network', fetchOpts);
+      if (retryCount < MAX_RETRIES) {
+        retryCount++;
+        var delay2 = Math.pow(2, retryCount) * 1000;
+        showError('Network error. Retrying in ' + (delay2/1000) + 's... (attempt ' + retryCount + '/' + MAX_RETRIES + ')', 'network');
+        setTimeout(function() { fetchAPOD(date, opts); }, delay2);
+      } else {
+        showError(err.message || 'Request failed. Check your connection.', 'network', fetchOpts);
+      }
     }
   }
 
