@@ -537,6 +537,6 @@ if __name__ == '__main__':
         print('Supabase: connected')
     else:
         print('Supabase: not configured (set SUPABASE_URL + SUPABASE_ANON_KEY)')
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8000))
     print(f'Server running at http://localhost:{port}')
     app.run(host='0.0.0.0', port=port, debug=True)
