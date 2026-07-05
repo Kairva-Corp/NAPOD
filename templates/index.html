@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="NAPOD — NASA Astronomy Picture of the Day viewer. Browse the cosmos by date with field notes." />
+<title>NAPOD · NASA APOD viewer</title>
+<link rel="icon" href="logo.png" sizes="any" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  .hidden { display: none !important; }
+
+  :root {
+    --void: #000000;
+    --panel: #0a0a0d;
+    --panel-2: #111116;
+    --border: #1c1c24;
+    --border-bright: #2e2e3a;
+    --text: #f5f6fb;
+    --text-dim: #aeb4d1;
+    --text-faint: #7d84a8;
+    --amber: #ffb454;
+    --amber-dim: rgba(255, 180, 84, 0.1);
+    --cyan: #6fd6ff;
+    --radius: 10px;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Space Grotesk', sans-serif;
+    --body: 'Inter', -apple-system, sans-serif;
+  }
+
+  html { font-size: 16px; }
+
+  body {
+    font-family: var(--body);
+    background: var(--void);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  #stars {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: block;
+  }
+  .void-glow {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 900px 460px at 50% 0%, rgba(255,180,84,0.05), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 30%, rgba(111,214,255,0.03), transparent 60%);
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 48px 24px 100px; }
+
+  .brand { text-align: center; margin-bottom: 40px; }
+  .brand .logo-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    margin-bottom: 8px;
+  }
+  .brand .logo-wrap img { height: 60px; width: auto; }
+  .brand h1 {
+    font-family: var(--display); font-size: 2.8rem;
+    font-weight: 700; letter-spacing: 0.06em;
+  }
+  .brand .maker {
+    font-family: var(--mono); font-size: 0.9rem;
+    color: var(--text-faint); letter-spacing: 0.16em;
+    text-transform: uppercase; margin-top: 6px;
+  }
+
+  .rate-status {
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    margin-top: 14px;
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--text-faint);
+    flex-wrap: wrap;
+  }
+  .rate-status .dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .rate-status .dot.ok { background: #5ccc7a; }
+  .rate-status .dot.warn { background: var(--amber); }
+  .rate-status .dot.low { background: #ff6060; }
+  .rate-status .stat { display: inline-flex; align-items: center; gap: 2px; }
+  .rate-status .stat.cache-hit { color: var(--cyan); opacity: 0.7; }
+
+  .loading {
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+    padding: 100px 0;
+  }
+  .loading .ring {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    border-top-color: var(--amber);
+    animation: spin 0.9s cubic-bezier(0.5,0,0.5,1) infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error {
+    background: rgba(255,90,90,0.05);
+    border: 1px solid rgba(255,90,90,0.18);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    color: #ff9494;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    font-family: var(--mono);
+  }
+  .error .err-type {
+    display: inline-block;
+    font-size: 0.6rem; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .error .err-type.api { background: rgba(255,90,90,0.15); }
+  .error .err-type.network { background: rgba(255,180,84,0.15); color: var(--amber); }
+  .error .err-type.cache { background: rgba(111,214,255,0.1); color: var(--cyan); }
+  .error .retry-btn {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,90,90,0.3);
+    background: transparent;
+    color: #ff9494;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .error .retry-btn:hover { background: rgba(255,90,90,0.1); }
+
+  .toast-container {
+    position: fixed; bottom: 32px; left: 50%; translate: -50% 0;
+    z-index: 999;
+    pointer-events: none;
+  }
+  .toast {
+    background: var(--amber); color: #1a1000;
+    font-family: var(--mono); font-size: 0.78rem;
+    padding: 10px 22px; border-radius: 8px;
+    pointer-events: auto;
+    opacity: 0; transform: translateY(12px);
+    transition: opacity 0.3s, transform 0.3s;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .viewport-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+  .viewport-row.hidden { display: none; }
+
+  .viewport-row .side-arrow {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-dim);
+    font-size: 1.15rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    flex-shrink: 0;
+  }
+  .viewport-row .side-arrow:hover:not(:disabled) {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: var(--amber-dim);
+  }
+  .viewport-row .side-arrow:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  .viewport {
+    position: relative;
+    padding: 14px;
+    flex: 1;
+    min-width: 0;
+    touch-action: pan-y;
+  }
+  .viewport::before,
+  .viewport::after,
+  .viewport .corner-tl,
+  .viewport .corner-br {
+    content: '';
+    position: absolute;
+    width: 22px; height: 22px;
+    border-color: var(--amber);
+    opacity: 0.75;
+  }
+  .viewport::before { top: 0; left: 0; border-top: 2px solid; border-left: 2px solid; }
+  .viewport::after { top: 0; right: 0; border-top: 2px solid; border-right: 2px solid; }
+  .viewport .corner-tl { bottom: 0; left: 0; border-bottom: 2px solid; border-left: 2px solid; }
+  .viewport .corner-br { bottom: 0; right: 0; border-bottom: 2px solid; border-right: 2px solid; }
+
+  .card-image {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+  }
+  .card-image img, .card-image iframe {
+    width: 100%; height: 100%; display: block;
+    object-fit: cover;
+  }
+  .card-image iframe { border: none; }
+  .card-image .badge {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 4px 11px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    z-index: 2;
+  }
+  .card-image .badge.video { color: var(--cyan); }
+
+  .img-skeleton {
+    position: absolute; inset: 0;
+    background: linear-gradient(110deg, #0a0a0d 30%, #15151e 50%, #0a0a0d 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    z-index: 1;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  .image-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+  .image-actions .btn-icon {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 0.7rem;
+    color: var(--text-dim);
+    background: none; border: none;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+    text-decoration: none;
+  }
+  .image-actions .btn-icon:hover { color: var(--amber); background: var(--amber-dim); }
+
+  .carousel-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    margin-bottom: 32px;
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    padding: 4px 2px;
+    max-width: 100%;
+    outline: none;
+  }
+  .carousel-track::-webkit-scrollbar { display: none; }
+  .carousel-track:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
+  .date-chip {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 58px;
+    height: 58px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .date-chip:hover:not(:disabled):not(.selected) {
+    border-color: var(--border-bright);
+    background: var(--panel-2);
+    color: var(--text);
+  }
+  .date-chip .d { font-size: 0.95rem; font-weight: 600; line-height: 1; }
+  .date-chip .m { font-size: 0.6rem; letter-spacing: 0.08em; opacity: 0.8; margin-top: 2px; }
+  .date-chip.selected {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #1a1000;
+    box-shadow: 0 0 16px rgba(255,180,84,0.25);
+  }
+  .date-chip:disabled { opacity: 0.2; cursor: not-allowed; }
+
+  .date-readout {
+    font-family: var(--mono);
+    font-size: 1.2rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    text-align: center;
+  }
+  .date-readout .yr { color: var(--text-dim); }
+
+  .controls-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .controls-row input[type="date"] {
+    appearance: none;
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .controls-row input[type="date"]:focus { border-color: var(--amber); }
+  .controls-row input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--border-bright); background: var(--panel-2); }
+  .btn.ghost { background: transparent; }
+  .btn.primary {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #1a1000;
+    font-weight: 600;
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+
+  .card.hidden { display: none; }
+
+  .entry-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .entry-meta .copyright {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-faint);
+  }
+  .entry-meta .share-link {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--amber);
+    background: none;
+    border: 1px solid var(--amber-dim);
+    padding: 3px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .entry-meta .share-link:hover { background: var(--amber-dim); }
+
+  .card-body h2 {
+    font-family: var(--display);
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    margin-bottom: 22px;
+    color: var(--text);
+    text-align: center;
+  }
+
+  .log-text {
+    position: relative;
+    padding-left: 20px;
+    border-left: 2px solid var(--border-bright);
+  }
+  .log-text .tag {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: block;
+    margin-bottom: 10px;
+  }
+  .log-text p {
+    color: var(--text-dim);
+    font-size: 1.02rem;
+    line-height: 1.85;
+    font-weight: 400;
+    text-align: justify;
+    text-justify: inter-word;
+  }
+
+  @media (max-width: 600px) {
+    .wrap { padding: 32px 16px 80px; }
+    .brand h1 { font-size: 2rem; }
+    .brand .logo-wrap img { height: 48px; }
+    .brand .maker { font-size: 0.78rem; }
+    .card-body h2 { font-size: 1.2rem; }
+    .date-chip { width: 50px; height: 50px; }
+    .viewport-row { gap: 6px; }
+    .viewport-row .side-arrow { width: 32px; height: 32px; font-size: 1rem; }
+    .viewport { padding: 8px; }
+    .image-actions { padding: 8px 10px; }
+    .image-actions .btn-icon { font-size: 0.65rem; padding: 3px 8px; }
+    .toast-container { bottom: 20px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loading .ring { animation: none; }
+    .img-skeleton { animation: none; background: var(--panel); }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+<div class="void-glow"></div>
+
+<div class="wrap">
+
+  <div class="brand">
+    <div class="logo-wrap">
+      <img src="logo.png" alt="Kairva Corp logo" />
+      <h1>NAPOD</h1>
+    </div>
+    <div class="maker">by Kairva Corp</div>
+    <div class="rate-status" id="rateStatus">
+      <span class="stat" id="rateNasa">NASA {% if nasa_limit %}{{ nasa_remaining }}/{{ nasa_limit }}{% else %}—{% endif %}</span>
+      <span class="stat" id="rateLocal">Proxy {{ rate_remaining }}/{{ rate_limit }}</span>
+      <span class="stat cache-hit{% if not cache_hit %} hidden{% endif %}" id="cacheInfo">&#9632; cached</span>
+      {% if visitor_count is not none %}<span class="stat" id="visitorCount">&#9733; {{ visitor_count }} visitors</span>{% endif %}
+    </div>
+  </div>
+
+  <div id="loading" class="loading{% if apod %} hidden{% endif %}" aria-live="polite" aria-label="Loading astronomy picture">
+    <div class="ring"></div>
+  </div>
+
+  <div id="error" class="error{% if not error %} hidden{% endif %}" aria-live="assertive" role="alert">
+    <span class="err-type" id="errType">SERVER</span><span id="errMsg">{% if error %}{{ error }}{% endif %}</span>
+    <br /><button class="retry-btn hidden" id="retryBtn">Retry</button>
+  </div>
+
+  <div class="carousel-section">
+    <div class="date-readout" id="dateReadout">{% if apod %}<span class="yr">{{ apod.date[:4] }}</span> · {{ apod.date[5:7]|month_name }} · {{ apod.date[8:] }}{% else %}—{% endif %}</div>
+
+    <div class="carousel-track" id="carouselTrack" tabindex="0" role="tablist" aria-label="Date navigator">
+    </div>
+
+    <div class="controls-row">
+      <input type="date" id="datePicker" value="{{ selected_date }}" max="{{ today }}" />
+      <button class="btn primary" id="fetchBtn">View entry</button>
+      <button class="btn ghost" id="todayBtn">Today</button>
+      <button class="btn ghost" id="randomBtn">Random</button>
+    </div>
+  </div>
+
+  <div id="viewportRow" class="viewport-row{% if not apod %} hidden{% endif %}">
+    <button class="side-arrow" id="prevDayBtn" title="Previous day" aria-label="Previous day">&#8249;</button>
+    <div class="viewport" id="viewport" tabindex="0" aria-label="Image viewer, swipe left or right">
+      <div class="card-image" id="imageContainer">
+{% if apod %}
+        <div class="badge{% if apod.media_type == 'video' %} video{% endif %}">{% if apod.media_type == 'video' %}Video feed{% else %}Optical image{% endif %}</div>
+  {% if apod.media_type == 'video' %}
+        <iframe src="{{ apod.url|replace('http://', 'https://') }}" allow="autoplay; encrypted-media" allowfullscreen aria-label="Embedded video player"></iframe>
+  {% else %}
+        <img src="{{ apod.url }}" alt="{{ apod.title }}" />
+  {% endif %}
+{% endif %}
+      </div>
+      <div class="corner-tl"></div>
+      <div class="corner-br"></div>
+    </div>
+    <button class="side-arrow" id="nextDayBtn" title="Next day" aria-label="Next day">&#8250;</button>
+  </div>
+
+  <div class="image-actions{% if not apod %} hidden{% endif %}" id="imageActions">
+    <a class="btn-icon" id="hdLink" target="_blank" rel="noopener" title="Open full-resolution image"{% if not apod or not apod.hdurl or apod.media_type == 'video' %} style="display:none"{% endif %}>&#9650; Full resolution</a>
+    <a class="btn-icon" id="nasaLink" target="_blank" rel="noopener" title="View on nasa.gov"{% if apod %} href="https://apod.nasa.gov/apod/ap{{ apod.date[2:4] }}{{ apod.date[5:7] }}{{ apod.date[8:] }}.html"{% endif %}>&#9733; NASA APOD</a>
+    <a class="btn-icon" id="videoFallbackLink" target="_blank" rel="noopener" title="Watch externally"{% if not apod or apod.media_type != 'video' %} style="display:none"{% endif %}{% if apod %} href="{{ apod.url }}"{% endif %}>&#9654; Watch externally</a>
+    <button class="btn-icon" id="copyLinkBtn" title="Copy link to this day">&#10752; Copy link</button>
+  </div>
+
+  <div id="card" class="card{% if not apod %} hidden{% endif %}">
+    <div class="card-body">
+      <div class="entry-meta">
+        <span class="copyright" id="displayCopyright">{% if apod %}{% if apod.copyright %}&copy; {{ apod.copyright }}{% else %}Public domain &middot; NASA{% endif %}{% endif %}</span>
+      </div>
+      <h2 id="displayTitle">{% if apod %}{{ apod.title }}{% endif %}</h2>
+      <div class="log-text">
+        <span class="tag">Field notes</span>
+        <p id="displayExplanation">{% if apod %}{{ apod.explanation }}{% endif %}</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-container" aria-live="polite">
+  <div class="toast" id="toast"></div>
+</div>
+
+{# Embed APOD data for JS — the frontend reads this instead of fetching on initial load #}
+<script id="initial-data" type="application/json">{{ apod|tojson|safe if apod else 'null' }}</script>
+
+<script>
+  const BASE = '/api/apod';
+  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const CAROUSEL_SPAN = 3;
+  const TIMEOUT_MS = 10_000;
+  const TODAY_STR = '{{ today }}';
+
+  const $ = id => document.getElementById(id);
+  const datePicker = $('datePicker');
+  const card = $('card');
+  const viewportRow = $('viewportRow');
+  const imageActions = $('imageActions');
+  const loading = $('loading');
+  const errorEl = $('error');
+  const imageContainer = $('imageContainer');
+  const dateReadout = $('dateReadout');
+  const displayCopyright = $('displayCopyright');
+  const displayTitle = $('displayTitle');
+  const displayExplanation = $('displayExplanation');
+  const carouselTrack = $('carouselTrack');
+  const prevDayBtn = $('prevDayBtn');
+  const nextDayBtn = $('nextDayBtn');
+  const hdLink = $('hdLink');
+  const nasaLink = $('nasaLink');
+  const videoFallbackLink = $('videoFallbackLink');
+  const copyLinkBtn = $('copyLinkBtn');
+  const toast = $('toast');
+  const viewport = $('viewport');
+  const rateStatus = $('rateStatus');
+  const rateNasa = $('rateNasa');
+  const rateLocal = $('rateLocal');
+  const cacheInfo = $('cacheInfo');
+  const errType = $('errType');
+  const errMsg = $('errMsg');
+  const retryBtn = $('retryBtn');
+  let lastFailedOpts = null;
+
+  let selectedDate = '{{ selected_date }}';
+  let carouselCenter = '{{ selected_date }}';
+  let abortController = null;
+  let currentData = null;
+
+  // Initial data from server (null if error)
+  let initialData = null;
+  try {
+    const el = document.getElementById('initial-data');
+    if (el && el.textContent.trim()) initialData = JSON.parse(el.textContent);
+  } catch {}
+
+  // ---------- Helpers ----------
+  function fmt(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+  function toDate(str) { return new Date(str + 'T00:00:00'); }
+  function addDays(str, n) { const d = toDate(str); d.setDate(d.getDate() + n); return fmt(d); }
+
+  function readoutFmt(dateStr) {
+    const [y, m, d] = dateStr.split('-');
+    return '<span class="yr">' + y + '</span> \u00B7 ' + MONTHS[parseInt(m,10)-1] + ' \u00B7 ' + d;
+  }
+
+  function apodPageUrl(dateStr) {
+    return 'https://apod.nasa.gov/apod/ap' + dateStr.slice(2,4) + dateStr.slice(5,7) + dateStr.slice(8) + '.html';
+  }
+  function shareUrl(dateStr) {
+    const u = new URL(window.location.origin + window.location.pathname);
+    u.searchParams.set('date', dateStr);
+    return u.href;
+  }
+
+  // ---------- Toast ----------
+  let toastTimer = null;
+  function showToast(msg) {
+    clearTimeout(toastTimer);
+    toast.textContent = msg;
+    toast.classList.add('show');
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 2500);
+  }
+
+  // ---------- Cache ----------
+  function cacheKey(date) { return 'napod_' + date; }
+  function getCache(date) {
+    try {
+      const raw = localStorage.getItem(cacheKey(date));
+      if (!raw) return null;
+      const entry = JSON.parse(raw);
+      if (Date.now() - entry.ts > 86_400_000) { localStorage.removeItem(cacheKey(date)); return null; }
+      return entry.data;
+    } catch { return null; }
+  }
+  function setCache(date, data) {
+    try { localStorage.setItem(cacheKey(date), JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+  function getStaleCache(date) {
+    if (!date) return null;
+    try {
+      const raw = localStorage.getItem(cacheKey(date));
+      if (!raw) return null;
+      return JSON.parse(raw).data;
+    } catch { return null; }
+  }
+
+  // ---------- Error mapping ----------
+  function friendlyError(status, body) {
+    if (status === 429) return 'Rate limit hit. NASA allows 1,000 requests/hour \u2014 try again in a moment.';
+    if (status === 400 || status === 404) {
+      if (body && body.msg && body.msg.indexOf('date') !== -1) return 'No APOD entry for that date. Try another day.';
+      if (body && body.msg && body.msg.indexOf('parameters') !== -1) return 'Missing or invalid parameters.';
+      return 'No data for that date. Try another day.';
+    }
+    if (body && body.msg) return body.msg;
+    if (body && body.error && body.error.message) return body.error.message;
+    if (body && typeof body.error === 'string') return body.error;
+    if (status >= 500) return 'NASA server error. Try again later.';
+    return 'Something went wrong. Check your connection and try again.';
+  }
+
+  // ---------- UI state ----------
+  function showLoading() {
+    if (abortController) abortController.abort();
+    loading.classList.remove('hidden');
+    card.classList.add('hidden');
+    viewportRow.classList.add('hidden');
+    imageActions.classList.add('hidden');
+    errorEl.classList.add('hidden');
+  }
+  function hideLoading() { loading.classList.add('hidden'); }
+
+  function showError(msg, type, retryOpts) {
+    var labels = { api: 'API', network: 'NETWORK', cache: 'CACHE', offline: 'OFFLINE', parse: 'PARSE' };
+    errType.textContent = labels[type] || 'ERROR';
+    errType.className = 'err-type ' + (type || 'api');
+    errMsg.textContent = msg;
+    errorEl.classList.remove('hidden');
+    card.classList.add('hidden');
+    viewportRow.classList.add('hidden');
+    imageActions.classList.add('hidden');
+    hideLoading();
+    if (retryOpts) {
+      lastFailedOpts = retryOpts;
+      retryBtn.classList.remove('hidden');
+    } else {
+      lastFailedOpts = null;
+      retryBtn.classList.add('hidden');
+    }
+  }
+
+  // ---------- Image skeleton ----------
+  function showSkeleton() {
+    var existing = imageContainer.querySelector('.img-skeleton');
+    if (!existing) {
+      var skel = document.createElement('div');
+      skel.className = 'img-skeleton';
+      skel.setAttribute('aria-hidden', 'true');
+      imageContainer.appendChild(skel);
+    }
+  }
+  function hideSkeleton() {
+    var skel = imageContainer.querySelector('.img-skeleton');
+    if (skel) skel.remove();
+  }
+
+  // ---------- Rate display ----------
+  function updateRateDisplay(headers) {
+    if (!headers) return;
+    var nasaRemain = headers.get('X-RateLimit-Remaining');
+    var nasaLimit = headers.get('X-RateLimit-Limit');
+    var localRemain = headers.get('X-RateLimit-Local-Remaining');
+    var localLimit = headers.get('X-RateLimit-Local-Limit');
+    if (nasaRemain !== null && nasaLimit !== null) {
+      var pct = parseInt(nasaRemain) / parseInt(nasaLimit);
+      var dc = pct > 0.2 ? 'ok' : (pct > 0.05 ? 'warn' : 'low');
+      rateNasa.innerHTML = '<span class="dot ' + dc + '"></span>NASA ' + nasaRemain + '/' + nasaLimit;
+    }
+    if (localRemain !== null && localLimit !== null) {
+      var pct2 = parseInt(localRemain) / parseInt(localLimit);
+      var dc2 = pct2 > 0.2 ? 'ok' : (pct2 > 0.05 ? 'warn' : 'low');
+      rateLocal.innerHTML = '<span class="dot ' + dc2 + '"></span>Proxy ' + localRemain + '/' + localLimit;
+    }
+    var cache = headers.get('X-Cache');
+    if (cache === 'HIT') cacheInfo.classList.remove('hidden');
+    else cacheInfo.classList.add('hidden');
+  }
+
+  // ---------- Render image ----------
+  function renderImage(data) {
+    hideSkeleton();
+    currentData = data;
+    var badge = document.createElement('div');
+    badge.className = 'badge' + (data.media_type === 'video' ? ' video' : '');
+    badge.textContent = data.media_type === 'video' ? 'Video feed' : 'Optical image';
+    imageContainer.innerHTML = '';
+    imageContainer.appendChild(badge);
+    if (data.media_type === 'video') {
+      var iframe = document.createElement('iframe');
+      iframe.src = data.url.replace('http://', 'https://');
+      iframe.allow = 'autoplay; encrypted-media';
+      iframe.allowFullscreen = true;
+      iframe.setAttribute('aria-label', 'Embedded video player');
+      imageContainer.appendChild(iframe);
+      videoFallbackLink.style.display = '';
+      videoFallbackLink.href = data.url;
+      hideSkeleton();
+    } else {
+      videoFallbackLink.style.display = 'none';
+      var preload = new Image();
+      preload.onload = function() {
+        var img = document.createElement('img');
+        img.alt = data.title;
+        img.src = preload.src;
+        img.loading = 'eager';
+        imageContainer.appendChild(img);
+        hideSkeleton();
+      };
+      preload.onerror = function() {
+        var img = document.createElement('img');
+        img.alt = data.title;
+        img.src = preload.src;
+        img.loading = 'eager';
+        imageContainer.appendChild(img);
+        hideSkeleton();
+      };
+      preload.src = data.url;
+    }
+    if (data.hdurl && data.media_type === 'image') {
+      hdLink.style.display = '';
+      hdLink.href = data.hdurl;
+    } else {
+      hdLink.style.display = 'none';
+    }
+    nasaLink.href = apodPageUrl(data.date);
+    imageActions.classList.remove('hidden');
+  }
+
+  // ---------- Carousel ----------
+  function renderCarousel() {
+    carouselTrack.innerHTML = '';
+    for (var i = -CAROUSEL_SPAN; i <= CAROUSEL_SPAN; i++) {
+      var dStr = addDays(carouselCenter, i);
+      var isFuture = dStr > TODAY_STR;
+      var parts = dStr.split('-');
+      var m = parseInt(parts[1], 10) - 1;
+      var chip = document.createElement('button');
+      chip.className = 'date-chip' + (dStr === selectedDate ? ' selected' : '');
+      chip.disabled = isFuture;
+      chip.setAttribute('role', 'tab');
+      chip.setAttribute('aria-selected', String(dStr === selectedDate));
+      chip.setAttribute('aria-label', parts[2] + ' ' + MONTHS[m] + ' ' + parts[0]);
+      chip.innerHTML = '<span class="d">' + parts[2] + '</span><span class="m">' + MONTHS[m] + '</span>';
+      chip.addEventListener('click', function(d) { return function() {
+        carouselCenter = d;
+        datePicker.value = d;
+        fetchAPOD(d);
+      }; }(dStr));
+      carouselTrack.appendChild(chip);
+    }
+    var selectedEl = carouselTrack.querySelector('.selected');
+    if (selectedEl) selectedEl.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }
+
+  // ---------- Keyboard nav ----------
+  carouselTrack.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      var next = addDays(carouselCenter, 1);
+      if (next <= TODAY_STR) { carouselCenter = next; datePicker.value = next; fetchAPOD(next); }
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      var prev = addDays(carouselCenter, -1);
+      carouselCenter = prev; datePicker.value = prev; fetchAPOD(prev);
+    }
+  });
+
+  // ---------- Swipe ----------
+  (function() {
+    var startX = 0, startY = 0, swiping = false;
+    viewport.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) return;
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY; swiping = true;
+    }, { passive: true });
+    viewport.addEventListener('touchmove', function(e) {
+      if (!swiping || e.touches.length !== 1) return;
+      var dx = e.touches[0].clientX - startX, dy = e.touches[0].clientY - startY;
+      if (Math.abs(dx) > Math.abs(dy) + 10) e.preventDefault();
+    }, { passive: false });
+    viewport.addEventListener('touchend', function(e) {
+      if (!swiping) return; swiping = false;
+      var dx = e.changedTouches[0].clientX - startX, dy = e.changedTouches[0].clientY - startY;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+      if (dx > 0) prevDayBtn.click(); else nextDayBtn.click();
+    }, { passive: true });
+  })();
+
+  // ---------- Copy link ----------
+  copyLinkBtn.addEventListener('click', async function() {
+    if (!selectedDate) return;
+    var url = shareUrl(selectedDate);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied');
+    } catch {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('Link copied');
+    }
+  });
+
+  // ---------- Side arrows ----------
+  prevDayBtn.addEventListener('click', function() {
+    if (!selectedDate) return;
+    fetchAPOD(addDays(selectedDate, -1));
+  });
+  nextDayBtn.addEventListener('click', function() {
+    if (!selectedDate || nextDayBtn.disabled) return;
+    fetchAPOD(addDays(selectedDate, 1));
+  });
+
+  // ---------- Fetch ----------
+  async function fetchAPOD(date, opts) {
+    opts = opts || {};
+    showLoading();
+    if (abortController) abortController.abort();
+    abortController = new AbortController();
+    var signal = abortController.signal;
+    var fetchOpts = { date: date, opts: { random: opts.random } };
+
+    // Check localStorage cache first
+    if (date && !opts.random) {
+      var cached = getCache(date);
+      if (cached) { abortController.abort(); applyData(cached); return; }
+    }
+
+    if (navigator.onLine === false) {
+      var stale = date ? getStaleCache(date) : null;
+      if (stale) { abortController.abort(); applyData(stale); showError('Offline \u2014 showing cached data.', 'offline'); return; }
+      showError('No internet connection.', 'offline', fetchOpts);
+      return;
+    }
+
+    var timeout = setTimeout(function() { abortController.abort(); }, TIMEOUT_MS);
+
+    try {
+      var url = BASE + '?thumbs=true';
+      if (opts.random) url += '&count=1';
+      else if (date) url += '&date=' + date;
+
+      var res = await fetch(url, { signal: signal });
+      clearTimeout(timeout);
+      updateRateDisplay(res.headers);
+
+      if (res.status === 429) {
+        var b = await res.json().catch(function(){ return {}; });
+        var s = date ? getStaleCache(date) : null;
+        if (s) { applyData(s); showError('Rate limit hit \u2014 showing cached data.', 'cache'); return; }
+        showError(friendlyError(429, b), 'api', fetchOpts);
+        return;
+      }
+      if (res.status >= 500) {
+        var b2 = await res.json().catch(function(){ return {}; });
+        var s2 = date ? getStaleCache(date) : null;
+        if (s2) { applyData(s2); showError('NASA server error \u2014 showing cached data.', 'cache'); return; }
+        showError(friendlyError(res.status, b2), 'api', fetchOpts);
+        return;
+      }
+      if (!res.ok) {
+        var b3 = await res.json().catch(function(){ return {}; });
+        showError(friendlyError(res.status, b3), 'api');
+        return;
+      }
+
+      var data;
+      try { data = await res.json(); } catch { showError('Failed to parse response.', 'parse', fetchOpts); return; }
+      if (Array.isArray(data)) data = data[0];
+      if (!data || !data.date) { showError('Unexpected response format.', 'parse', fetchOpts); return; }
+
+      setCache(data.date, data);
+      applyData(data);
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError' || err.code === 20) {
+        var s3 = date ? getStaleCache(date) : null;
+        if (s3) { applyData(s3); showError('Request timed out \u2014 showing cached data.', 'cache'); return; }
+        showError('Request timed out. Check your connection and try again.', 'network', fetchOpts);
+        return;
+      }
+      var s4 = date ? getStaleCache(date) : null;
+      if (s4) { applyData(s4); showError('Network error \u2014 showing cached data.', 'cache'); return; }
+      showError(err.message || 'Request failed. Check your connection.', 'network', fetchOpts);
+    }
+  }
+
+  function applyData(data) {
+    hideLoading();
+    viewportRow.classList.remove('hidden');
+    card.classList.remove('hidden');
+    selectedDate = data.date;
+    carouselCenter = data.date;
+    dateReadout.innerHTML = readoutFmt(data.date);
+    datePicker.value = data.date;
+    displayCopyright.textContent = data.copyright ? '\u00A9 ' + data.copyright : 'Public domain \u00B7 NASA';
+    displayTitle.textContent = data.title;
+    displayExplanation.textContent = data.explanation;
+    showSkeleton();
+    renderImage(data);
+    renderCarousel();
+    nextDayBtn.disabled = selectedDate >= TODAY_STR;
+  }
+
+  // ---------- Bootstrap ----------
+  (function init() {
+    // Use server-rendered data if available (no fetch on load)
+    if (initialData) {
+      applyData(initialData);
+    } else {
+      // No initial data — fetch falls back to the selected_date
+      fetchAPOD('{{ selected_date }}');
+    }
+  })();
+
+  // ---------- Retry + online listener ----------
+  retryBtn.addEventListener('click', function() {
+    if (lastFailedOpts) fetchAPOD(lastFailedOpts.date, lastFailedOpts.opts);
+  });
+  window.addEventListener('online', function() {
+    if (lastFailedOpts && !errorEl.classList.contains('hidden')) {
+      fetchAPOD(lastFailedOpts.date, lastFailedOpts.opts);
+    }
+  });
+
+  // ---------- Button events ----------
+  $('fetchBtn').addEventListener('click', function() { if (datePicker.value) fetchAPOD(datePicker.value); });
+  $('todayBtn').addEventListener('click', function() { var d = TODAY_STR; datePicker.value = d; fetchAPOD(d); });
+  $('randomBtn').addEventListener('click', function() { fetchAPOD(null, { random: true }); });
+
+  // ---------- Starfield ----------
+  (function() {
+    var canvas = $('stars');
+    var ctx = canvas.getContext('2d');
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var stars = [];
+    var w, h;
+
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+      var count = Math.floor((w * h) / 2200);
+      stars = Array.from({ length: count }, function() {
+        var isBright = Math.random() < 0.06;
+        return {
+          x: Math.random() * w, y: Math.random() * h,
+          r: isBright ? (Math.random() * 1.1 + 1.3) : (Math.random() * 0.9 + 0.3),
+          base: isBright ? (Math.random() * 0.3 + 0.6) : (Math.random() * 0.5 + 0.2),
+          speed: Math.random() * 0.015 + 0.004,
+          phase: Math.random() * Math.PI * 2,
+          glow: isBright,
+        };
+      });
+    }
+
+    function draw(t) {
+      ctx.clearRect(0, 0, w, h);
+      for (var i = 0; i < stars.length; i++) {
+        var s = stars[i];
+        var twinkle = reduceMotion ? 1 : (Math.sin(t * s.speed + s.phase) * 0.4 + 0.6);
+        ctx.globalAlpha = s.base * twinkle;
+        ctx.fillStyle = s.glow ? '#fff7e8' : '#cdd6f4';
+        if (s.glow) { ctx.shadowColor = '#ffdca8'; ctx.shadowBlur = 6; }
+        else { ctx.shadowBlur = 0; }
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      if (!reduceMotion) requestAnimationFrame(draw);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    draw(0);
+    if (reduceMotion) draw(0);
+  })();
+</script>
+
+</body>
+</html>
